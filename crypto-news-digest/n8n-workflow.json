@@ -1,0 +1,554 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "options": {
+          "ignoreSSL": false
+        }
+      },
+      "id": "3595bdae-5348-4094-86ea-721159c6dc3a",
+      "name": "Coindesk",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "position": [
+        0,
+        160
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://cointelegraph.com/rss",
+        "options": {}
+      },
+      "id": "1dbc6754-24e9-423c-afda-3552f89fa03e",
+      "name": "Cointelegraph",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "position": [
+        0,
+        352
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://decrypt.co/feed",
+        "options": {}
+      },
+      "id": "e87092b8-a7ef-4467-bf00-42aa6b369554",
+      "name": "Decrypt",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "position": [
+        0,
+        528
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://cryptobriefing.com/feed/",
+        "options": {}
+      },
+      "id": "03af5914-d08f-4879-9158-4a66f5958c8b",
+      "name": "Cryptobriefing",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "position": [
+        0,
+        704
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "url": "https://nulltx.com/feed/",
+        "options": {
+          "ignoreSSL": false
+        }
+      },
+      "id": "3703b942-acda-4252-aaad-740aa0540e0e",
+      "name": "Nulltx",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "dbc5199d-3b0b-479c-a99d-32e8e2c53c95",
+      "name": "Scheduler",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        -304,
+        288
+      ],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "id": "8d5399ab-0846-4aa0-9c43-9ea9a3dbb562",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "position": [
+        176,
+        320
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Фильтрация и дедупликация новостей\nconst items = $input.all();\nconst now = new Date();\nconst yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);\n\n// Убираем дубликаты и фильтруем по времени\nconst uniqueNews = [];\nconst seenUrls = new Set();\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // Проверяем дату публикации\n  const pubDate = new Date(data.pubDate || data.isoDate);\n  if (pubDate < yesterday) continue;\n  \n  // Проверяем на дубликаты\n  if (seenUrls.has(data.link)) continue;\n  seenUrls.add(data.link);\n  \n  // Берем все доступные поля контента\n  const rssContent = data['content:encodedSnippet'] || data.content || data.contentSnippet || data.summary || '';\n  \n  // Очищаем RSS контент от HTML\n  const cleanRssContent = rssContent\n    .replace(/<[^>]*>/g, '')\n    .replace(/&[^;]+;/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n  \n  // Создаем новый объект, теперь с сохранением contentSnippet\n  uniqueNews.push({\n    title: data.title,\n    link: data.link,\n    rssContent: cleanRssContent,\n    contentSnippet: data.contentSnippet, // Сохраняем оригинальный contentSnippet\n    pubDate: data.pubDate,\n    source: data['dc:creator'] || data.meta?.title || 'Unknown',\n    guid: data.guid\n  });\n}\n\nconsole.log(`Filtered ${uniqueNews.length} unique news from ${items.length} total`);\n\nreturn uniqueNews.map(item => ({ json: item }));"
+      },
+      "id": "999b5a8b-2bf5-4796-a67d-93abb0fbb36f",
+      "name": "News Filter & Sorter",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        336,
+        368
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get all incoming items as an array\nconst allItems = $input.all();\n\n// 2. From each item, take only its 'json' part (the actual news)\n// and put it into a new array.\nconst newsArray = allItems.map(item => item.json);\n\n// 3. Return ONE SINGLE new item.\n// This item will have a field 'data' that contains the array of all news.\n// The name 'data' is important because it is used in the prompt: {{$json.data}}\nreturn [{\n  json: {\n    data: newsArray\n  }\n}];\n"
+      },
+      "id": "b8d2b966-b025-4b39-8a49-bf8c097a98ae",
+      "name": "News Formatter",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        640,
+        368
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an SMM editor acting as a professional **email news editor** for a leading AI and crypto news digest. Your task is to produce a **clean, professional, email-ready digest** using **ONLY simple HTML tags** that are safe for all email clients.\n\n---\n\nMAIN RULES:\n\n1. STRICTLY FORBIDDEN: Markdown formatting, symbols *, _, [], (), `, emojis, decorative symbols, inline CSS, or any tags other than allowed.\n2. Allowed HTML tags only: <b>, <u>, <br>, <code>, <a>\n3. Bold text MUST use <b> exclusively.\n4. Do NOT include emojis or Telegram-specific formatting.\n\n---\n\nCONTENT RULES:\n\n- Process each news item sequentially from the provided JSON array.\n- Write in **clear, professional English**.\n- For each news item, write a **3–5 sentence editorial summary**.\n- At the beginning of the summary, highlight the **key concept** (company, product, technology, or announcement) using <b>.\n- Maintain a **neutral, professional newsletter tone** suitable for business email readers.\n\n---\n\nREQUIRED HTML STRUCTURE FOR EACH NEWS ITEM:\n\n<b><u>[Number]. [Headline in English]</u></b><br><br>\n<b>[Key concept highlighted here]</b> followed by a clear, professional 3–5 sentence editorial summary written for an email newsletter audience.<br><br>\n<code>[DD Month YYYY, HH:MM]</code><br>\n<a href=\"[source URL]\">Read more</a><br><br>\n#CryptoDigest<br><br>\n\n---\n\nOUTPUT INSTRUCTIONS:\n\n1. Number each news item sequentially (1., 2., 3., etc.).\n2. Use **<br><br>** exactly as shown to separate sections and news items.\n3. Headlines must remain in English.\n4. Summary must start with a bolded key concept (<b>).\n5. Include **only one branding hashtag**: #CryptoDigest.\n6. Do not deviate from this template.  \n7. The output must be ready to paste directly into an HTML email newsletter.\n\n---\n\nINPUT DATA:\n\nThe input is a JSON array of news items:\n\n{{ $json.output }}\n",
+        "options": {}
+      },
+      "id": "05e2fa2d-2fb4-40b1-8854-f6cf6b666af6",
+      "name": "SMM Editor",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        832,
+        304
+      ],
+      "retryOnFail": true,
+      "typeVersion": 2.1,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a senior analyst at a leading crypto and blockchain media outlet (such as CoinDesk or The Block). Your specialization is identifying the most significant and influential events in the world of crypto and blockchain technologies.\n\nYour task is to analyze the provided array of news articles and identify the 10 most important events or topics of the day. For each of the 10 selected events, you must choose the single best and most informative article that covers it.\n\nStrictly follow this process:\n\nAnalysis: Read all articles to compile a complete list of unique events and topics of the day.\n\nEvaluation: Assess the importance of each event using the criteria below.\n\nSelection: Choose the 10 most important events.\n\nBest article choice: For each of the 10 events, if it is covered by multiple articles, select the one that is the most comprehensive and comes from the most authoritative source.\n\nCriteria for evaluating importance (in order of priority):\n\nFinance and Business:\n\nMajor deals, mergers and acquisitions (M&A) in the crypto industry.\n\nLarge funding rounds for crypto startups (especially over $20M).\n\nStrategic partnerships and contracts with major market players.\n\nProducts and Technology:\n\nLaunch of breakthrough blockchain protocols, cryptocurrencies, DeFi platforms, or NFT projects.\n\nImportant network and protocol updates affecting scalability, security, or functionality.\n\nSignificant changes in APIs, limits, or operational rules of major crypto services.\n\nPolicy and Regulation:\n\nNews about new government laws, regulations, or sanctions directly impacting the crypto market and blockchain technologies.\n\nScientific and Technical Breakthroughs:\n\nPublication of research or new technological solutions that set a new standard in the crypto industry.\n\nOutput format:\nYour answer must be ONLY a valid JSON array containing the full objects of the 10 selected news items (one per event). Do not add any explanations, comments, or text before or after the JSON array.\n\nInput data (news array):\n{{ JSON.stringify($json.data, null, 2) }}",
+        "options": {}
+      },
+      "id": "9a6380df-2b40-4431-8070-fe1280608b8b",
+      "name": "Crypto Analyst",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        832,
+        528
+      ],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the AI-generated HTML from previous node\nconst longText = $json.output;\n\n// Optional: split by news item if needed\nconst newsItems = longText.split(/\\n{2,}/); // assumes double line break separates items\n\n// Wrap in a single email div\nfunction wrapEmailHtml(content) {\n  return `\n    <div style=\"font-family: Arial, Helvetica, sans-serif; font-size:14px; line-height:1.6; color:#222;\">\n      ${content}\n    </div>\n  `;\n}\n\n// Build final HTML (no escaping needed)\nconst finalHtml = wrapEmailHtml(newsItems.join('<br><br>'));\n\n// Return as single email-ready block\nreturn [{\n  json: {\n    html: finalHtml,\n    subject: `AI & Crypto Digest - ${newsItems.length} Updates`\n  }\n}];\n"
+      },
+      "id": "bba356b0-575a-4c19-a6b8-abc7082be648",
+      "name": "News Preparer",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1120,
+        272
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "2b4bef4e-4997-4bdc-a14f-06c7b9aa4545",
+      "name": "GPT",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        800,
+        704
+      ],
+      "typeVersion": 1.2,
+      "credentials": {
+        "openAiApi": {
+          "id": "MpvhaYhGsQviqi1d",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "id": "f1680078-2f9c-4923-a37e-0c6fd72e49ba",
+      "name": "GPT 2",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        832,
+        432
+      ],
+      "typeVersion": 1.2,
+      "credentials": {
+        "openAiApi": {
+          "id": "62zlt1GYxkfYuTTj",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "[YOUR_EMAIL_HERE]",
+        "subject": "Test",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1360,
+        288
+      ],
+      "id": "c272e2c1-5667-4dc2-8273-d621c5d7bdb6",
+      "name": "Send a message",
+      "webhookId": "[REGENERATE_AFTER_IMPORT]",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sqATI0ipBSPvdDAv",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Receives all RSS/news items.\n\nFilters out items older than 24 hours.\n\nRemoves duplicate news by URL.\n\nCleans content from HTML and extra whitespace.\n\nCreates a simplified, uniform news object with title, link, cleaned content, date, and source.\n\nReturns the filtered, deduplicated list ready for further processing (e.g., summarizing, sending to email, Telegram, etc.).",
+        "height": 416
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        272,
+        -112
+      ],
+      "id": "c7661585-4367-4482-82a9-edae8b599fc3",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Collects all incoming news items.\n\nExtracts just the actual news content from each item.\n\nPacks all of them into one single object with a data property.\n\nThis makes it easier for downstream nodes (like an AI summarizer) to access all news in one go.",
+        "height": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        528,
+        -16
+      ],
+      "id": "e267cbaf-2e17-41e8-aa47-0db4eecc8778",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "Takes AI-generated text (already formatted with HTML).\n\nSplits it into individual news items using double line breaks.\n\nWraps the entire digest in a <div> with email-safe inline styles.\n\nJoins the items with <br><br> for proper spacing in email.\n\nReturns a single HTML block and a subject line, ready to be sent as an email.",
+        "height": 368
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        -128
+      ],
+      "id": "b2ba7855-f967-4db2-a6b1-6a4dbf496fbd",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "Act as a senior crypto analyst.\n\nLook at a list of news articles.\n\nIdentify all unique events/topics in crypto/blockchain.\n\nPick the 10 most important events of the day based on: finance, tech, policy, or research impact.\n\nFor each top event, select the single most authoritative article.\n\nReturn exactly 10 JSON objects, nothing else.",
+        "height": 256,
+        "width": 464
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        880,
+        752
+      ],
+      "id": "1e939975-c9b0-4cd1-892c-cef2436dd657",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "In short, your SMM editor node is a professional news formatter: it takes raw news, turns it into readable, email/Telegram-friendly HTML, and highlights the most important points while keeping a clean professional look."
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        816,
+        96
+      ],
+      "id": "68754e7b-de62-402a-b403-0c56a7787cab",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "table": "=CryptoNews",
+        "columns": "CRHEADER, CRBODY, CRLINK, CRDATE"
+      },
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        464
+      ],
+      "id": "37959903-ae2d-4e36-8c3d-5600fd3a09f9",
+      "name": "Microsoft SQL",
+      "credentials": {
+        "microsoftSql": {
+          "id": "lDScXqhHsUYu6AX8",
+          "name": "Microsoft SQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the HTML from previous node\nconst html = $json.output;\n\n// Split on numbered headlines\nconst blocks = html.split(/<b><u>\\d+\\.\\s*/).slice(1);\n\nconst results = [];\n\nfor (const block of blocks) {\n    const fullBlock = '<b><u>' + block;\n\n    // 1. Header\n    const headerMatch = fullBlock.match(/<b><u>(.*?)<\\/u><\\/b>/);\n    if (!headerMatch) continue;\n    const header = headerMatch[1].trim();\n\n    // 2. Body (everything AFTER header and BEFORE <code>)\n    const bodyMatch = fullBlock.match(\n        /<\\/u><\\/b><br><br>\\s*([\\s\\S]*?)\\s*<br><br>\\s*<code>/\n    );\n\n    let body = '';\n    if (bodyMatch) {\n        body = bodyMatch[1]\n            .replace(/<b>/g, '')\n            .replace(/<\\/b>/g, '')\n            .replace(/<br\\s*\\/?>/g, '\\n')\n            .trim();\n    }\n\n    // 3. Date (inside <code>)\n    const dateMatch = fullBlock.match(/<code>(.*?)<\\/code>/);\n    const rawDate = dateMatch ? dateMatch[1].trim() : null;\n\n    // OPTIONAL: convert to ISO for SQL Server\n    // Example: \"26 January 2026, 16:31\" → \"2026-01-26T16:31:00\"\n    let crDate = null;\n    if (rawDate) {\n        const parsed = new Date(rawDate);\n        if (!isNaN(parsed)) {\n            crDate = parsed.toISOString();\n        }\n    }\n\n    // 4. Link\n    const linkMatch = fullBlock.match(/<a href=\"(.*?)\">Read more<\\/a>/);\n    const link = linkMatch ? linkMatch[1].trim() : '';\n\n    results.push({\n        json: {\n            CRHEADER: header,\n            CRBODY: body,\n            CRLINK: link,\n            CRDATE: crDate,     // normalized datetime\n            CRDATERAW: rawDate  // optional: keep original text\n        }\n    });\n}\n\nreturn results;\n"
+      },
+      "id": "d133dd56-b588-4c55-b34a-26ad8676f769",
+      "name": "News Preparer1",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1120,
+        448
+      ],
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Coindesk": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cointelegraph": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Decrypt": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Cryptobriefing": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Nulltx": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scheduler": {
+      "main": [
+        [
+          {
+            "node": "Coindesk",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cointelegraph",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Decrypt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cryptobriefing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Nulltx",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "News Filter & Sorter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "News Filter & Sorter": {
+      "main": [
+        [
+          {
+            "node": "News Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "News Formatter": {
+      "main": [
+        [
+          {
+            "node": "Crypto Analyst",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMM Editor": {
+      "main": [
+        [
+          {
+            "node": "News Preparer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "News Preparer1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crypto Analyst": {
+      "main": [
+        [
+          {
+            "node": "SMM Editor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "News Preparer": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Crypto Analyst",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT 2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "SMM Editor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "News Preparer1": {
+      "main": [
+        [
+          {
+            "node": "Microsoft SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d249c568f822a430c0aadadd1a838744201f31cc42330d0d55bccce136f1fbba"
+  }
+}
